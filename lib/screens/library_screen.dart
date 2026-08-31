@@ -8,6 +8,8 @@ import '../services/database_service.dart';
 import '../services/gallery_service.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/platform_badge.dart';
+import 'about_screen.dart';
+import 'settings_screen.dart';
 
 /// Library screen — grid view of all downloaded media
 class LibraryScreen extends StatefulWidget {
@@ -193,16 +195,54 @@ class _LibraryScreenState extends State<LibraryScreen> {
             // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Text(
-                'Library',
-                style: Theme.of(context).textTheme.displayMedium,
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onLongPress: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AboutScreen()),
+                      );
+                    },
+                    child: Text(
+                      'SAVED//GALLERY',
+                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                            fontSize: 22,
+                            letterSpacing: -1.0,
+                          ),
+                    ),
+                  ),
+                  const Spacer(),
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppColors.line),
+                      ),
+                      child: const Icon(
+                        Icons.tune_rounded,
+                        size: 16,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Text(
-                '${_downloads.length} video${_downloads.length != 1 ? 's' : ''} saved',
+                '${_downloads.length} video${_downloads.length != 1 ? 's' : ''} saved to gallery',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),

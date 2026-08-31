@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'config/constants.dart';
 import 'screens/home_screen.dart';
+import 'screens/music_screen.dart';
 import 'screens/library_screen.dart';
 import 'theme/app_theme.dart';
+import 'widgets/mini_player.dart';
 
 /// Root app widget with bottom navigation
 class SaveDukApp extends StatelessWidget {
@@ -32,6 +34,7 @@ class AppShellState extends State<AppShell> {
 
   final List<Widget> _screens = const [
     HomeScreen(),
+    MusicScreen(),
     LibraryScreen(),
   ];
 
@@ -39,31 +42,44 @@ class AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(index: _currentIndex, children: _screens),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border(
-            top: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Persistent Mini Audio Player across all screens
+          const MiniPlayer(),
+
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              border: Border(
+                top: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+              ),
+            ),
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: (index) {
+                setState(() => _currentIndex = index);
+              },
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.download_rounded),
+                  activeIcon: Icon(Icons.download_rounded),
+                  label: 'GET',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.music_note_outlined),
+                  activeIcon: Icon(Icons.music_note_rounded),
+                  label: 'MUSIC',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.video_library_outlined),
+                  activeIcon: Icon(Icons.video_library_rounded),
+                  label: 'SAVED',
+                ),
+              ],
+            ),
           ),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            setState(() => _currentIndex = index);
-          },
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.download_rounded),
-              activeIcon: Icon(Icons.download_rounded),
-              label: 'GET',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.video_library_outlined),
-              activeIcon: Icon(Icons.video_library_rounded),
-              label: 'SAVED',
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }

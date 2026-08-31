@@ -195,8 +195,13 @@ class MainActivity : FlutterActivity() {
             return null
         }
         val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() } ?: return null
+        val explicitMode = intent.getStringExtra("saveduk_mode")
         val className = intent.component?.className ?: ""
-        val mode = if (className.contains("ShareMusicActivity")) "music" else "download"
+        val mode = if (explicitMode == "music" || className.contains("MusicShareActivity") || className.contains("ShareMusicActivity")) {
+            "music"
+        } else {
+            "download"
+        }
         return mapOf("url" to text, "mode" to mode)
     }
 

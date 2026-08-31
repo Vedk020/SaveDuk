@@ -14,6 +14,10 @@ import '../widgets/progress_indicator.dart' as custom;
 import 'package:uuid/uuid.dart';
 import '../services/share_handler_service.dart';
 import '../services/background_download_service.dart';
+import '../services/settings_service.dart';
+import '../widgets/music_recognition_sheet.dart';
+import 'about_screen.dart';
+import 'settings_screen.dart';
 import 'dart:async';
 
 /// Home screen — main interface with URL paste + download list
@@ -32,25 +36,42 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   List<DownloadItem> _downloads = [];
   bool _isLoading = true;
 
-  StreamSubscription<String>? _shareSubscription;
+  StreamSubscription<SharedPayload>? _shareSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadDownloads();
     _checkCookies();
-    // Listen for shared URLs from the ShareHandlerService
-    _shareSubscription = ShareHandlerService.instance.sharedUrlStream.listen((
-      url,
-    ) {
-      _processUrl(url);
+
+    // Listen for structured shared payloads from ShareHandlerService
+    _shareSubscription = ShareHandlerService.instance.sharedPayloadStream.listen((payload) {
+      _handleIncomingPayload(payload);
     });
-    // Check for any pending URL from cold start
-    final pending = ShareHandlerService.instance.consumePending();
+
+    // Check for cold-start payload
+    final pending = ShareHandlerService.instance.consumePendingPayload();
     if (pending != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _processUrl(pending);
+        _handleIncomingPayload(pending);
       });
+    }
+  }
+
+  Future<void> _handleIncomingPayload(SharedPayload payload) async {
+    if (payload.mode == ShareMode.music) {
+      await _recognizeAndShowMusic(payload.url);
+    } else {
+      _processUrl(payload.url);
+    }
+  }
+
+  Future<void> _recognizeAndShowMusic(String rawUrl) async {
+    final extractedUrl = UrlParserService.extractUrl(rawUrl) ?? rawUrl;
+    final cleanUrl = UrlParserService.cleanUrl(extractedUrl);
+
+    if (mounted) {
+      MusicRecognitionSheet.startRecognition(context, cleanUrl);
     }
   }
 
@@ -553,30 +574,50 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   children: [
                     Row(
                       children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.line, width: 1),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(7),
-                            child: Image.asset(
-                              'assets/images/logo.png',
+                        // Dynamic Logo (alternates based on user setting)
+                        ValueListenableBuilder<String>(
+                          valueListenable: SettingsService.instance.activeLogoNotifier,
+                          builder: (context, activeLogo, _) {
+                            return Container(
                               width: 38,
                               height: 38,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppColors.line, width: 1),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(7),
+                                child: Image.asset(
+                                  activeLogo,
+                                  width: 38,
+                                  height: 38,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(width: 12),
-                        Text(
-                          'SAVE//DUK',
-                          style: Theme.of(context).textTheme.displayMedium
-                              ?.copyWith(letterSpacing: -1.5),
+
+                        // Title with Long-Press Easter Egg Gesture
+                        GestureDetector(
+                          onLongPress: () {
+                            HapticFeedback.heavyImpact();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AboutScreen()),
+                            );
+                          },
+                          child: Text(
+                            'SAVE//DUK',
+                            style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                                  letterSpacing: -1.5,
+                                ),
+                          ),
                         ),
                         const Spacer(),
+
+                        // Cookies status button
                         InkWell(
                           onTap: _showCookieModal,
                           borderRadius: BorderRadius.circular(6),
@@ -603,8 +644,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 const SizedBox(width: 5),
                                 Text(
                                   _hasCookies ? 'COOKIES ✓' : 'COOKIES',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                         fontSize: 10,
                                         color: _hasCookies
                                             ? Colors.greenAccent
@@ -617,10 +657,30 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          '01',
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(color: AppColors.textMuted),
+
+                        // Settings Icon Button
+                        InkWell(
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                            ).then((_) => _checkCookies());
+                          },
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceLight,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AppColors.line),
+                            ),
+                            child: const Icon(
+                              Icons.tune_rounded,
+                              size: 16,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
                         ),
                       ],
                     ),

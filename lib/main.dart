@@ -3,8 +3,11 @@ import 'package:flutter/services.dart';
 import 'app.dart';
 import 'services/share_handler_service.dart';
 
-void main() {
+import 'services/settings_service.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SettingsService.instance.init();
   runApp(const SaveDukBootstrap());
 }
 
@@ -22,18 +25,28 @@ class _SaveDukBootstrapState extends State<SaveDukBootstrap> {
   void initState() {
     super.initState();
     _shareChannel.setMethodCallHandler((call) async {
-      if (call.method == 'sharedText') {
+      if (call.method == 'sharedPayload' && call.arguments is Map) {
+        final map = call.arguments as Map;
+        final payload = SharedPayload.fromMap(Map<Object?, Object?>.from(map));
+        ShareHandlerService.instance.pushPayload(payload);
+      } else if (call.method == 'sharedText') {
         final text = call.arguments as String?;
         if (text != null && text.isNotEmpty) {
           ShareHandlerService.instance.push(text);
         }
       }
     });
-    _loadInitialSharedText();
+    _loadInitialSharedPayload();
   }
 
-  Future<void> _loadInitialSharedText() async {
+  Future<void> _loadInitialSharedPayload() async {
     try {
+      final raw = await _shareChannel.invokeMethod<Object?>('takeSharedPayload');
+      if (raw is Map) {
+        final payload = SharedPayload.fromMap(Map<Object?, Object?>.from(raw));
+        ShareHandlerService.instance.pushPayload(payload);
+        return;
+      }
       final text = await _shareChannel.invokeMethod<String>('takeSharedText');
       if (text != null && text.isNotEmpty) {
         ShareHandlerService.instance.push(text);
