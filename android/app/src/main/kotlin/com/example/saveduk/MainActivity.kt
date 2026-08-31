@@ -25,23 +25,79 @@ class MainActivity : FlutterActivity() {
 
     private val shareChannelName = "saveduk/share"
     private val extractorChannelName = "saveduk/extractor"
-    private var pendingSharedText: String? = null
+    private var pendingSharePayload: Map<String, String>? = null
     private var shareChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        pendingSharedText = extractSharedText(intent) ?: pendingSharedText
+        pendingSharePayload = extractSharedPayload(intent) ?: pendingSharePayload
         shareChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, shareChannelName).also { channel ->
             channel.setMethodCallHandler { call, result ->
-                if (call.method == "takeSharedText") {
-                    result.success(pendingSharedText)
-                    pendingSharedText = null
-                } else {
-                    result.notImplemented()
+                when (call.method) {
+                    "takeSharedPayload" -> {
+                        result.success(pendingSharePayload)
+                        pendingSharePayload = null
+                    }
+                    "takeSharedText" -> {
+                        result.success(pendingSharePayload?.get("url"))
+                        pendingSharePayload = null
+                    }
+                    else -> result.notImplemented()
                 }
             }
         }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, extractorChannelName).setMethodCallHandler { call, result ->
+            if (call.method == "searchTracks") {
+                val query = call.argument<String>("query") ?: ""
+                val limit = call.argument<Int>("limit") ?: 10
+                if (query.isBlank()) {
+                    result.success(mapOf("tracks" to emptyList<Map<String, Any?>>()))
+                    return@setMethodCallHandler
+                }
+                val requestId = extractionSequence.incrementAndGet()
+                extractorExecutor.execute {
+                    try {
+                        if (!Python.isStarted()) {
+                            Python.start(AndroidPlatform(applicationContext))
+                        }
+                        val raw = Python.getInstance()
+                            .getModule("saveduk_native.bridge")
+                            .callAttr("search_tracks", query, limit, requestId)
+                            .toString()
+                        val response = jsonToMap(JSONObject(raw))
+                        runOnUiThread { result.success(response) }
+                    } catch (e: Exception) {
+                        Log.e(extractorLogTag, "searchTracks failure: ${e.message}")
+                        runOnUiThread { result.error("search_failed", e.message, null) }
+                    }
+                }
+                return@setMethodCallHandler
+            }
+            if (call.method == "setCookies") {
+                val cookies = call.argument<String>("cookies") ?: ""
+                try {
+                    val cookieFile = java.io.File(applicationContext.filesDir, "saveduk_cookies.txt")
+                    cookieFile.writeText(cookies)
+                    Log.i(extractorLogTag, "cookies updated (${cookies.length} bytes)")
+                    result.success(cookieFile.absolutePath)
+                } catch (e: Exception) {
+                    Log.e(extractorLogTag, "cookie write failed: ${e.message}")
+                    result.error("cookie_error", "Failed to save cookies", null)
+                }
+                return@setMethodCallHandler
+            }
+            if (call.method == "getCookiePath") {
+                val cookieFile = java.io.File(applicationContext.filesDir, "saveduk_cookies.txt")
+                result.success(if (cookieFile.exists()) cookieFile.absolutePath else "")
+                return@setMethodCallHandler
+            }
+            if (call.method == "clearCookies") {
+                val cookieFile = java.io.File(applicationContext.filesDir, "saveduk_cookies.txt")
+                if (cookieFile.exists()) cookieFile.delete()
+                Log.i(extractorLogTag, "cookies cleared")
+                result.success(null)
+                return@setMethodCallHandler
+            }
             if (call.method != "extract") {
                 result.notImplemented()
                 return@setMethodCallHandler
@@ -51,8 +107,10 @@ class MainActivity : FlutterActivity() {
                 result.error("invalid_url", "A media URL is required.", null)
                 return@setMethodCallHandler
             }
+            val cookieFile = java.io.File(applicationContext.filesDir, "saveduk_cookies.txt")
+            val cookiePath = if (cookieFile.exists()) cookieFile.absolutePath else ""
             val requestId = extractionSequence.incrementAndGet()
-            Log.i(extractorLogTag, "[$requestId] queued host=${urlHost(url)}")
+            Log.i(extractorLogTag, "[$requestId] queued host=${urlHost(url)} cookies=${cookiePath.isNotEmpty()}")
             extractorExecutor.execute {
                 try {
                     if (!Python.isStarted()) {
@@ -62,7 +120,7 @@ class MainActivity : FlutterActivity() {
                     Log.d(extractorLogTag, "[$requestId] calling embedded extractor")
                     val raw = Python.getInstance()
                         .getModule("saveduk_native.bridge")
-                        .callAttr("extract", url, requestId)
+                        .callAttr("extract", url, requestId, cookiePath)
                         .toString()
                     val response = jsonToMap(JSONObject(raw))
                     val extractorError = response["error"] as? String
@@ -73,8 +131,6 @@ class MainActivity : FlutterActivity() {
                     }
                     runOnUiThread { result.success(response) }
                 } catch (error: Exception) {
-                    // Preserve the failure type and a redacted message in
-                    // Logcat, but only expose a short request code to Flutter.
                     Log.e(
                         extractorLogTag,
                         "[$requestId] native bridge failure " +
@@ -90,22 +146,58 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "saveduk/foreground").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    val title = call.argument<String>("title") ?: "Downloading…"
+                    val intent = Intent(this, DownloadForegroundService::class.java).apply {
+                        action = DownloadForegroundService.ACTION_START
+                        putExtra("title", title)
+                    }
+                    startForegroundService(intent)
+                    result.success(null)
+                }
+                "update" -> {
+                    val title = call.argument<String>("title") ?: "Downloading…"
+                    val progress = call.argument<Int>("progress") ?: 0
+                    val intent = Intent(this, DownloadForegroundService::class.java).apply {
+                        action = DownloadForegroundService.ACTION_UPDATE
+                        putExtra("title", title)
+                        putExtra("progress", progress)
+                    }
+                    startService(intent)
+                    result.success(null)
+                }
+                "stop" -> {
+                    val intent = Intent(this, DownloadForegroundService::class.java).apply {
+                        action = DownloadForegroundService.ACTION_STOP
+                    }
+                    startService(intent)
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        extractSharedText(intent)?.let { text ->
-            pendingSharedText = text
-            shareChannel?.invokeMethod("sharedText", text)
+        extractSharedPayload(intent)?.let { payload ->
+            pendingSharePayload = payload
+            shareChannel?.invokeMethod("sharedPayload", payload)
+            shareChannel?.invokeMethod("sharedText", payload["url"])
         }
     }
 
-    private fun extractSharedText(intent: Intent?): String? {
+    private fun extractSharedPayload(intent: Intent?): Map<String, String>? {
         if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("text/") != true) {
             return null
         }
-        return intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() } ?: return null
+        val className = intent.component?.className ?: ""
+        val mode = if (className.contains("ShareMusicActivity")) "music" else "download"
+        return mapOf("url" to text, "mode" to mode)
     }
 
     private fun jsonToMap(value: JSONObject): Map<String, Any?> = buildMap {

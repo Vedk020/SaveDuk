@@ -33,7 +33,9 @@ class AppPlatforms {
     name: 'Instagram',
     icon: Icons.camera_alt,
     color: AppColors.textPrimary,
-    urlPatterns: [RegExp(r'instagram\.com/(reel|p|reels)/')],
+    urlPatterns: [
+      RegExp(r'(instagram\.com/(reel|reels|p|tv|stories|share/reel|share/p)/|instagr\.am/(p|reel)/)'),
+    ],
   );
 
   static final twitter = SupportedPlatform(
@@ -50,7 +52,7 @@ class AppPlatforms {
     icon: Icons.facebook,
     color: AppColors.textPrimary,
     urlPatterns: [
-      RegExp(r'(facebook\.com/.+/videos/|fb\.watch/|facebook\.com/reel/)'),
+      RegExp(r'(facebook\.com/(.+/videos/|reel/|watch[/?]|share/r/|share/v/|story\.php)|fb\.watch/|fb\.gg/)'),
     ],
   );
 

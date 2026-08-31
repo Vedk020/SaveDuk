@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app.dart';
+import 'services/share_handler_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,7 +16,6 @@ class SaveDukBootstrap extends StatefulWidget {
 }
 
 class _SaveDukBootstrapState extends State<SaveDukBootstrap> {
-  final GlobalKey<AppShellState> _appShellKey = GlobalKey();
   static const MethodChannel _shareChannel = MethodChannel('saveduk/share');
 
   @override
@@ -23,7 +23,10 @@ class _SaveDukBootstrapState extends State<SaveDukBootstrap> {
     super.initState();
     _shareChannel.setMethodCallHandler((call) async {
       if (call.method == 'sharedText') {
-        _processSharedText(call.arguments as String?);
+        final text = call.arguments as String?;
+        if (text != null && text.isNotEmpty) {
+          ShareHandlerService.instance.push(text);
+        }
       }
     });
     _loadInitialSharedText();
@@ -31,23 +34,17 @@ class _SaveDukBootstrapState extends State<SaveDukBootstrap> {
 
   Future<void> _loadInitialSharedText() async {
     try {
-      _processSharedText(
-        await _shareChannel.invokeMethod<String>('takeSharedText'),
-      );
+      final text = await _shareChannel.invokeMethod<String>('takeSharedText');
+      if (text != null && text.isNotEmpty) {
+        ShareHandlerService.instance.push(text);
+      }
     } on MissingPluginException {
       // Share receiving is currently implemented for Android only.
     }
   }
 
-  void _processSharedText(String? text) {
-    if (text == null || text.isEmpty) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _appShellKey.currentState?.handleSharedUrl(text);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return SaveDukApp(key: _appShellKey, initialSharedUrl: null);
+    return const SaveDukApp();
   }
 }

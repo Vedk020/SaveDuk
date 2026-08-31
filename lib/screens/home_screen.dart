@@ -12,12 +12,13 @@ import '../widgets/download_card.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/progress_indicator.dart' as custom;
 import 'package:uuid/uuid.dart';
+import '../services/share_handler_service.dart';
+import '../services/background_download_service.dart';
+import 'dart:async';
 
 /// Home screen — main interface with URL paste + download list
 class HomeScreen extends StatefulWidget {
-  final String? sharedUrl;
-
-  const HomeScreen({super.key, this.sharedUrl});
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => HomeScreenState();
@@ -31,20 +32,26 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   List<DownloadItem> _downloads = [];
   bool _isLoading = true;
 
+  StreamSubscription<String>? _shareSubscription;
+
   @override
   void initState() {
     super.initState();
     _loadDownloads();
-    if (widget.sharedUrl != null) {
+    _checkCookies();
+    // Listen for shared URLs from the ShareHandlerService
+    _shareSubscription = ShareHandlerService.instance.sharedUrlStream.listen((
+      url,
+    ) {
+      _processUrl(url);
+    });
+    // Check for any pending URL from cold start
+    final pending = ShareHandlerService.instance.consumePending();
+    if (pending != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _processUrl(widget.sharedUrl!);
+        _processUrl(pending);
       });
     }
-  }
-
-  /// Called externally when a new URL is shared into the app
-  void handleSharedUrl(String url) {
-    _processUrl(url);
   }
 
   Future<void> _loadDownloads() async {
@@ -110,12 +117,25 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final result = await _extractorService.extract(item.originalUrl);
 
       if (!result.isSuccess) {
+        final errorMsg = result.error ?? 'Failed to get download link';
         _updateItem(
           current.copyWith(
             status: DownloadStatus.failed,
-            errorMessage: result.error ?? 'Failed to get download link',
+            errorMessage: errorMsg,
           ),
         );
+        final isAuthError =
+            errorMsg.toLowerCase().contains('cookie') ||
+            errorMsg.toLowerCase().contains('authentication') ||
+            errorMsg.toLowerCase().contains('login');
+        if (isAuthError) {
+          _showSnackbar(
+            errorMsg,
+            isError: true,
+            onAction: _showCookieModal,
+            actionLabel: 'COOKIES',
+          );
+        }
         return;
       }
 
@@ -127,6 +147,11 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         title: result.title,
       );
       _updateItem(current);
+
+      // Start foreground service to keep downloads alive in background
+      await BackgroundDownloadService.notifyDownloadStarted(
+        title: result.title,
+      );
 
       final videoPath = await _downloadService.downloadFile(
         url: result.video.url,
@@ -144,6 +169,10 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             progress: scaledProgress,
           );
           _updateItem(current);
+          BackgroundDownloadService.updateProgress(
+            title: result.title,
+            progress: (scaledProgress * 100).toInt(),
+          );
         },
         onFileSize: (bytes) {
           current = current.copyWith(fileSize: bytes);
@@ -196,6 +225,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _updateItem(current);
 
       _showSnackbar('Saved to gallery ✓');
+      await BackgroundDownloadService.notifyDownloadFinished();
     } catch (e) {
       _updateItem(
         current.copyWith(
@@ -203,6 +233,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           errorMessage: e.toString(),
         ),
       );
+      await BackgroundDownloadService.notifyDownloadFinished();
       _showSnackbar('Download failed', isError: true);
     }
   }
@@ -258,13 +289,221 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _showSnackbar(String message, {bool isError = false}) {
+  bool _hasCookies = false;
+
+  Future<void> _checkCookies() async {
+    final hasCookies = await _extractorService.hasCookies();
+    if (mounted) {
+      setState(() => _hasCookies = hasCookies);
+    }
+  }
+
+  void _showCookieModal() {
+    final cookieInputController = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (modalContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(modalContext).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.vpn_key_outlined,
+                        size: 20,
+                        color: AppColors.textPrimary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'SESSION COOKIES',
+                        style: Theme.of(
+                          modalContext,
+                        ).textTheme.titleLarge?.copyWith(fontSize: 16),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _hasCookies
+                              ? AppColors.surfaceLight
+                              : AppColors.cardBackground,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: AppColors.line),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _hasCookies
+                                    ? Colors.greenAccent
+                                    : AppColors.textMuted,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _hasCookies ? 'ACTIVE' : 'NOT SET',
+                              style: Theme.of(modalContext).textTheme.bodySmall
+                                  ?.copyWith(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Instagram & Facebook require authentication for many posts. Paste your session cookie string (e.g. sessionid=... or Netscape format) from your browser.',
+                    style: Theme.of(
+                      modalContext,
+                    ).textTheme.bodySmall?.copyWith(height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: cookieInputController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Paste sessionid=... or cookie export here',
+                      hintStyle: Theme.of(modalContext).textTheme.bodySmall,
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.content_paste, size: 18),
+                        tooltip: 'Paste from clipboard',
+                        onPressed: () async {
+                          final data = await Clipboard.getData(
+                            Clipboard.kTextPlain,
+                          );
+                          if (data?.text != null) {
+                            cookieInputController.text = data!.text!;
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      if (_hasCookies) ...[
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              await _extractorService.clearCookies();
+                              await _checkCookies();
+                              setModalState(() {});
+                              if (modalContext.mounted) {
+                                Navigator.pop(modalContext);
+                              }
+                              _showSnackbar('Cookies cleared');
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.textSecondary,
+                              side: const BorderSide(color: AppColors.line),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            child: const Text('Clear'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            final text = cookieInputController.text.trim();
+                            if (text.isEmpty) {
+                              _showSnackbar(
+                                'Please paste a cookie string',
+                                isError: true,
+                              );
+                              return;
+                            }
+                            final success = await _extractorService.setCookies(
+                              text,
+                            );
+                            if (success) {
+                              await _checkCookies();
+                              if (modalContext.mounted) {
+                                Navigator.pop(modalContext);
+                              }
+                              _showSnackbar('Cookies saved ✓');
+                            } else {
+                              _showSnackbar(
+                                'Failed to save cookies',
+                                isError: true,
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.textPrimary,
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: const Text(
+                            'Save Cookies',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showSnackbar(
+    String message, {
+    bool isError = false,
+    VoidCallback? onAction,
+    String? actionLabel,
+  }) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? AppColors.error : AppColors.surface,
-        duration: const Duration(seconds: 2),
+        duration: Duration(seconds: isError ? 4 : 2),
+        action: actionLabel != null && onAction != null
+            ? SnackBarAction(
+                label: actionLabel,
+                textColor: Colors.black,
+                backgroundColor: AppColors.textPrimary,
+                onPressed: onAction,
+              )
+            : null,
       ),
     );
   }
@@ -277,6 +516,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _shareSubscription?.cancel();
     _urlController.dispose();
     _downloadService.dispose();
     super.dispose();
@@ -313,12 +553,70 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   children: [
                     Row(
                       children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.line, width: 1),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(7),
+                            child: Image.asset(
+                              'assets/images/logo.png',
+                              width: 38,
+                              height: 38,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
                         Text(
                           'SAVE//DUK',
                           style: Theme.of(context).textTheme.displayMedium
                               ?.copyWith(letterSpacing: -1.5),
                         ),
                         const Spacer(),
+                        InkWell(
+                          onTap: _showCookieModal,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceLight,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AppColors.line),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.vpn_key_outlined,
+                                  size: 13,
+                                  color: _hasCookies
+                                      ? Colors.greenAccent
+                                      : AppColors.textMuted,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  _hasCookies ? 'COOKIES ✓' : 'COOKIES',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        fontSize: 10,
+                                        color: _hasCookies
+                                            ? Colors.greenAccent
+                                            : AppColors.textMuted,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Text(
                           '01',
                           style: Theme.of(context).textTheme.labelLarge

@@ -46,6 +46,13 @@ class UrlParserService {
           'feature',
           'fbclid',
           'igshid',
+          'igsh',
+          'mibextid',
+          'ref',
+          'share_id',
+          'sfnsn',
+          'paipv',
+          'app',
         ].contains(key),
       );
       return uri

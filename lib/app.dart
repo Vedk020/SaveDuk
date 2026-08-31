@@ -6,9 +6,7 @@ import 'theme/app_theme.dart';
 
 /// Root app widget with bottom navigation
 class SaveDukApp extends StatelessWidget {
-  final String? initialSharedUrl;
-
-  const SaveDukApp({super.key, this.initialSharedUrl});
+  const SaveDukApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -16,16 +14,14 @@ class SaveDukApp extends StatelessWidget {
       title: 'SaveDuk',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: AppShell(initialSharedUrl: initialSharedUrl),
+      home: const AppShell(),
     );
   }
 }
 
 /// App shell with bottom navigation
 class AppShell extends StatefulWidget {
-  final String? initialSharedUrl;
-
-  const AppShell({super.key, this.initialSharedUrl});
+  const AppShell({super.key});
 
   @override
   State<AppShell> createState() => AppShellState();
@@ -33,26 +29,11 @@ class AppShell extends StatefulWidget {
 
 class AppShellState extends State<AppShell> {
   int _currentIndex = 0;
-  final GlobalKey<HomeScreenState> _homeKey = GlobalKey();
 
-  late final List<Widget> _screens;
-
-  @override
-  void initState() {
-    super.initState();
-    _screens = [
-      HomeScreen(key: _homeKey, sharedUrl: widget.initialSharedUrl),
-      const LibraryScreen(),
-    ];
-  }
-
-  /// Called from main.dart when a new URL is shared
-  void handleSharedUrl(String url) {
-    setState(() {
-      _currentIndex = 0; // switch to home tab
-    });
-    _homeKey.currentState?.handleSharedUrl(url);
-  }
+  final List<Widget> _screens = const [
+    HomeScreen(),
+    LibraryScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {

@@ -29,10 +29,15 @@ class MediaStream {
   }
 }
 
-/// The streams selected by the embedded yt-dlp extractor.
+/// The streams and metadata selected by the embedded yt-dlp extractor.
 class ExtractedMedia {
   final String title;
   final String filename;
+  final String? track;
+  final String? artist;
+  final String? album;
+  final String? thumbnail;
+  final int duration;
   final MediaStream video;
   final MediaStream? audio;
   final String? error;
@@ -40,6 +45,11 @@ class ExtractedMedia {
   const ExtractedMedia({
     required this.title,
     required this.filename,
+    this.track,
+    this.artist,
+    this.album,
+    this.thumbnail,
+    this.duration = 0,
     required this.video,
     this.audio,
     this.error,
@@ -71,6 +81,11 @@ class ExtractedMedia {
     return ExtractedMedia(
       title: (map['title'] as String?) ?? 'Saved media',
       filename: (map['filename'] as String?) ?? 'saveduk-video.mp4',
+      track: map['track'] as String?,
+      artist: map['artist'] as String?,
+      album: map['album'] as String?,
+      thumbnail: map['thumbnail'] as String?,
+      duration: (map['duration'] as num?)?.toInt() ?? 0,
       video: MediaStream.fromMap(Map<Object?, Object?>.from(video)),
       audio: audio is Map
           ? MediaStream.fromMap(Map<Object?, Object?>.from(audio))
@@ -79,9 +94,63 @@ class ExtractedMedia {
   }
 }
 
+/// Search result track model
+class SearchTrackResult {
+  final String id;
+  final String title;
+  final String artist;
+  final String? album;
+  final String? thumbnail;
+  final int duration;
+  final String url;
+
+  const SearchTrackResult({
+    required this.id,
+    required this.title,
+    required this.artist,
+    this.album,
+    this.thumbnail,
+    this.duration = 0,
+    required this.url,
+  });
+
+  factory SearchTrackResult.fromMap(Map<Object?, Object?> map) {
+    return SearchTrackResult(
+      id: (map['id'] as String?) ?? '',
+      title: (map['title'] as String?) ?? 'Unknown Track',
+      artist: (map['artist'] as String?) ?? 'Unknown Artist',
+      album: map['album'] as String?,
+      thumbnail: map['thumbnail'] as String?,
+      duration: (map['duration'] as num?)?.toInt() ?? 0,
+      url: (map['url'] as String?) ?? '',
+    );
+  }
+}
+
 /// Bridges Flutter to the Android-only, embedded yt-dlp extractor.
 class OnDeviceExtractorService {
   static const MethodChannel _channel = MethodChannel('saveduk/extractor');
+
+  /// Search online music tracks via embedded yt-dlp engine.
+  Future<List<SearchTrackResult>> searchTracks(String query, {int limit = 10}) async {
+    if (!Platform.isAndroid || query.trim().isEmpty) return [];
+    try {
+      final response = await _channel.invokeMethod<Object?>('searchTracks', {
+        'query': query,
+        'limit': limit,
+      });
+      if (response is! Map) return [];
+      final rawTracks = response['tracks'];
+      if (rawTracks is! List) return [];
+      return rawTracks
+          .whereType<Map>()
+          .map((m) => SearchTrackResult.fromMap(Map<Object?, Object?>.from(m)))
+          .toList();
+    } catch (e) {
+      debugPrint('[SaveDukExtractor] searchTracks error: $e');
+      return [];
+    }
+  }
 
   Future<ExtractedMedia> extract(String url) async {
     if (!Platform.isAndroid) {
@@ -127,5 +196,36 @@ class OnDeviceExtractorService {
         error: 'The on-device extractor returned an invalid response.',
       );
     }
+  }
+
+  /// Save raw cookie text (Netscape format or key=value header format) for authenticated platforms.
+  Future<bool> setCookies(String cookies) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      await _channel.invokeMethod('setCookies', {'cookies': cookies});
+      return true;
+    } catch (e) {
+      debugPrint('[SaveDukExtractor] failed to save cookies: $e');
+      return false;
+    }
+  }
+
+  /// Check whether cookies are currently stored.
+  Future<bool> hasCookies() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final path = await _channel.invokeMethod<String>('getCookiePath');
+      return path != null && path.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Clear stored cookies.
+  Future<void> clearCookies() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('clearCookies');
+    } catch (_) {}
   }
 }
