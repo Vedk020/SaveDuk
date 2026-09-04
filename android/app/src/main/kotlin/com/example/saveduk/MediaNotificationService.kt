@@ -22,6 +22,8 @@ class MediaNotificationService : Service() {
         const val ACTION_STOP = "com.example.saveduk.MEDIA_STOP"
 
         const val ACTION_PLAY_PAUSE = "com.example.saveduk.ACTION_PLAY_PAUSE"
+        const val ACTION_PREVIOUS = "com.example.saveduk.ACTION_PREVIOUS"
+        const val ACTION_NEXT = "com.example.saveduk.ACTION_NEXT"
         const val ACTION_REWIND = "com.example.saveduk.ACTION_REWIND"
         const val ACTION_FORWARD = "com.example.saveduk.ACTION_FORWARD"
 
@@ -57,6 +59,12 @@ class MediaNotificationService : Service() {
             }
             ACTION_PLAY_PAUSE -> {
                 onActionCallback?.invoke("play_pause")
+            }
+            ACTION_PREVIOUS -> {
+                onActionCallback?.invoke("previous")
+            }
+            ACTION_NEXT -> {
+                onActionCallback?.invoke("next")
             }
             ACTION_REWIND -> {
                 onActionCallback?.invoke("rewind")
@@ -99,9 +107,9 @@ class MediaNotificationService : Service() {
         )
 
         // Action PendingIntents
-        val rewindIntent = Intent(this, MediaNotificationService::class.java).apply { action = ACTION_REWIND }
-        val rewindPending = PendingIntent.getService(
-            this, 1, rewindIntent,
+        val previousIntent = Intent(this, MediaNotificationService::class.java).apply { action = ACTION_PREVIOUS }
+        val previousPending = PendingIntent.getService(
+            this, 1, previousIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -111,9 +119,9 @@ class MediaNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val forwardIntent = Intent(this, MediaNotificationService::class.java).apply { action = ACTION_FORWARD }
-        val forwardPending = PendingIntent.getService(
-            this, 3, forwardIntent,
+        val nextIntent = Intent(this, MediaNotificationService::class.java).apply { action = ACTION_NEXT }
+        val nextPending = PendingIntent.getService(
+            this, 3, nextIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -138,9 +146,9 @@ class MediaNotificationService : Service() {
             .setOngoing(isPlaying)
             .setOnlyAlertOnce(true)
             .setSilent(true)
-            .addAction(android.R.drawable.ic_media_rew, "-10s", rewindPending)
+            .addAction(android.R.drawable.ic_media_previous, "Previous", previousPending)
             .addAction(playPauseIcon, playPauseTitle, playPausePending)
-            .addAction(android.R.drawable.ic_media_ff, "+10s", forwardPending)
+            .addAction(android.R.drawable.ic_media_next, "Next", nextPending)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close", stopPending)
             .build()
     }

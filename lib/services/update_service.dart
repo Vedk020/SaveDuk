@@ -41,8 +41,8 @@ class UpdateService {
   static final UpdateService instance = UpdateService._();
 
   /// Current app version (keep synced with pubspec.yaml version)
-  static const String currentVersion = '1.0.0';
-  static const int currentBuildNumber = 1;
+  static const String currentVersion = '1.0.1';
+  static const int currentBuildNumber = 2;
 
   /// Default remote URL that hosts the version configuration JSON
   /// Users/Developers can host this file on GitHub Raw, Firebase, or their own domain.

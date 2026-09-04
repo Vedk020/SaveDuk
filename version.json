@@ -1,10 +1,10 @@
 {
-  "latest_version": "1.0.0",
-  "latest_build": 1,
-  "min_required_version": "1.0.0",
-  "min_required_build": 1,
-  "force_update": false,
-  "title": "SaveDuk Beta Release",
-  "release_notes": "• Initial public beta release\n• High-performance on-device video downloader\n• SaveDuk Music with ACRCloud acoustic fingerprinting\n• Playlist import and offline library",
+  "latest_version": "1.0.1",
+  "latest_build": 2,
+  "min_required_version": "1.0.1",
+  "min_required_build": 2,
+  "force_update": true,
+  "title": "SaveDuk v1.0.1 Update",
+  "release_notes": "• Next & Previous track buttons with queue support\n• Infinite Auto-Play with smart recommendations\n• Android lock screen & notification controls\n• Audio streaming cleartext fix for ExoPlayer\n• Download deduplication and lag elimination",
   "download_url": "https://github.com/Vedk020/SaveDuk/releases/latest"
 }

@@ -107,21 +107,29 @@ class _MusicScreenState extends State<MusicScreen> with SingleTickerProviderStat
     }
   }
 
-  Future<void> _playSearchResult(SearchTrackResult searchTrack) async {
+  Future<void> _playSearchResult(SearchTrackResult searchTrack, {List<SearchTrackResult>? sourceList}) async {
     HapticFeedback.lightImpact();
-    final track = MusicTrack(
-      id: searchTrack.id,
-      title: searchTrack.title,
-      artist: searchTrack.artist,
-      album: searchTrack.album,
-      artworkUrl: searchTrack.thumbnail,
-      originalMediaUrl: searchTrack.url,
-      durationSeconds: searchTrack.duration,
-      createdAt: DateTime.now(),
-    );
+    final track = searchTrack.toMusicTrack();
+    List<MusicTrack>? queueTracks;
+    int? idx;
+
+    if (sourceList != null && sourceList.isNotEmpty) {
+      queueTracks = sourceList.map((s) => s.toMusicTrack()).toList();
+      idx = sourceList.indexOf(searchTrack);
+    } else if (_searchResults.isNotEmpty) {
+      queueTracks = _searchResults.map((s) => s.toMusicTrack()).toList();
+      idx = _searchResults.indexOf(searchTrack);
+    } else if (_trendingTracks.isNotEmpty) {
+      queueTracks = _trendingTracks.map((s) => s.toMusicTrack()).toList();
+      idx = _trendingTracks.indexOf(searchTrack);
+    }
 
     try {
-      await MusicPlayerService.instance.playTrack(track);
+      await MusicPlayerService.instance.playTrack(
+        track,
+        queue: queueTracks,
+        index: idx != null && idx >= 0 ? idx : null,
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -131,10 +139,16 @@ class _MusicScreenState extends State<MusicScreen> with SingleTickerProviderStat
     }
   }
 
-  Future<void> _playSavedTrack(MusicTrack track) async {
+  Future<void> _playSavedTrack(MusicTrack track, {List<MusicTrack>? sourceList}) async {
     HapticFeedback.lightImpact();
+    final queue = sourceList ?? _savedTracks;
+    final idx = queue.indexOf(track);
     try {
-      await MusicPlayerService.instance.playTrack(track);
+      await MusicPlayerService.instance.playTrack(
+        track,
+        queue: queue.isNotEmpty ? queue : null,
+        index: idx >= 0 ? idx : null,
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -308,12 +322,12 @@ class _MusicScreenState extends State<MusicScreen> with SingleTickerProviderStat
                             icon: const Icon(Icons.play_arrow_rounded, color: AppColors.textPrimary, size: 28),
                             onPressed: () {
                               Navigator.pop(sheetCtx);
-                              _playSavedTrack(track);
+                              _playSavedTrack(track, sourceList: _offlineTracks);
                             },
                           ),
                           onTap: () {
                             Navigator.pop(sheetCtx);
-                            _playSavedTrack(track);
+                            _playSavedTrack(track, sourceList: _offlineTracks);
                           },
                         ),
                       );
@@ -432,7 +446,7 @@ class _MusicScreenState extends State<MusicScreen> with SingleTickerProviderStat
                 ElevatedButton.icon(
                   onPressed: () {
                     HapticFeedback.mediumImpact();
-                    _playSavedTrack(tracks.first);
+                    _playSavedTrack(tracks.first, sourceList: tracks);
                     Navigator.pop(sheetCtx);
                   },
                   icon: const Icon(Icons.play_arrow_rounded, color: Colors.black),
@@ -485,12 +499,12 @@ class _MusicScreenState extends State<MusicScreen> with SingleTickerProviderStat
                           trailing: IconButton(
                             icon: const Icon(Icons.play_circle_filled_rounded, size: 26, color: AppColors.textPrimary),
                             onPressed: () {
-                              _playSavedTrack(track);
+                              _playSavedTrack(track, sourceList: tracks);
                               Navigator.pop(sheetCtx);
                             },
                           ),
                           onTap: () {
-                            _playSavedTrack(track);
+                            _playSavedTrack(track, sourceList: tracks);
                             Navigator.pop(sheetCtx);
                           },
                         ),

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../models/music_track.dart';
 
 /// A direct media stream with the request headers required by its source.
 class MediaStream {
@@ -123,6 +124,20 @@ class SearchTrackResult {
       thumbnail: map['thumbnail'] as String?,
       duration: (map['duration'] as num?)?.toInt() ?? 0,
       url: (map['url'] as String?) ?? '',
+    );
+  }
+
+  /// Converts a search result into a playable MusicTrack
+  MusicTrack toMusicTrack() {
+    return MusicTrack(
+      id: id.isNotEmpty ? id : DateTime.now().millisecondsSinceEpoch.toString(),
+      title: title,
+      artist: artist,
+      album: album,
+      artworkUrl: thumbnail,
+      originalMediaUrl: url,
+      durationSeconds: duration,
+      createdAt: DateTime.now(),
     );
   }
 }

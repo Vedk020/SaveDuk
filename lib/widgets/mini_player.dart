@@ -139,6 +139,20 @@ class MiniPlayer extends StatelessWidget {
                         },
                       ),
 
+                      // Next Track button
+                      IconButton(
+                        icon: const Icon(
+                          Icons.skip_next_rounded,
+                          color: AppColors.textPrimary,
+                          size: 24,
+                        ),
+                        tooltip: 'Next Track',
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          playerService.skipToNext();
+                        },
+                      ),
+
                       // Close / Stop button
                       IconButton(
                         icon: const Icon(
@@ -292,6 +306,27 @@ class MiniPlayer extends StatelessWidget {
 
                         const SizedBox(height: 20),
 
+                    // Track Queue Index Indicator
+                    ValueListenableBuilder<int>(
+                      valueListenable: playerService.currentIndexNotifier,
+                      builder: (context, idx, _) {
+                        final total = playerService.queue.length;
+                        if (total <= 1 || idx < 0) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            'TRACK ${idx + 1} OF $total',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              letterSpacing: 1.2,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+
                     // Title & Artist
                     Text(
                       current.title,
@@ -306,25 +341,123 @@ class MiniPlayer extends StatelessWidget {
                       style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
 
                     // RepaintBoundary isolated Seeker Bar
                     const RepaintBoundary(child: _FullPlayerSeekBar()),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
 
-                    // Playback Control Buttons
+                    // Secondary Quick Toolbar: Rewind 10s, Auto-Play Badge, Forward 10s
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.replay_10_rounded, size: 28, color: AppColors.textSecondary),
+                          icon: const Icon(Icons.replay_10_rounded, size: 22, color: AppColors.textMuted),
+                          tooltip: 'Rewind 10s',
                           onPressed: () {
                             HapticFeedback.lightImpact();
                             final pos = playerService.player.position;
                             playerService.seek(pos - const Duration(seconds: 10));
                           },
                         ),
-                        const SizedBox(width: 20),
+                        ValueListenableBuilder<bool>(
+                          valueListenable: playerService.isAutoPlayNotifier,
+                          builder: (context, autoPlay, _) {
+                            return InkWell(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                playerService.toggleAutoPlay();
+                              },
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: autoPlay
+                                      ? Colors.greenAccent.withValues(alpha: 0.12)
+                                      : AppColors.surfaceLight,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: autoPlay
+                                        ? Colors.greenAccent.withValues(alpha: 0.5)
+                                        : AppColors.line,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.all_inclusive_rounded,
+                                      size: 13,
+                                      color: autoPlay ? Colors.greenAccent : AppColors.textMuted,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'AUTOPLAY ${autoPlay ? 'ON' : 'OFF'}',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.8,
+                                        color: autoPlay ? Colors.greenAccent : AppColors.textMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.forward_10_rounded, size: 22, color: AppColors.textMuted),
+                          tooltip: 'Forward 10s',
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            final pos = playerService.player.position;
+                            playerService.seek(pos + const Duration(seconds: 10));
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Primary Playback Controls: Shuffle, Previous, Play/Pause, Next, Repeat
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // Shuffle button
+                        ValueListenableBuilder<bool>(
+                          valueListenable: playerService.isShuffleNotifier,
+                          builder: (context, shuffle, _) {
+                            return IconButton(
+                              icon: Icon(
+                                Icons.shuffle_rounded,
+                                size: 22,
+                                color: shuffle ? Colors.greenAccent : AppColors.textSecondary,
+                              ),
+                              tooltip: 'Shuffle',
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                playerService.toggleShuffle();
+                              },
+                            );
+                          },
+                        ),
+
+                        // Previous Track button
+                        IconButton(
+                          icon: const Icon(
+                            Icons.skip_previous_rounded,
+                            size: 38,
+                            color: AppColors.textPrimary,
+                          ),
+                          tooltip: 'Previous Track',
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            playerService.skipToPrevious();
+                          },
+                        ),
+
+                        // Big Play / Pause Circular Button
                         Container(
                           width: 64,
                           height: 64,
@@ -350,13 +483,45 @@ class MiniPlayer extends StatelessWidget {
                             },
                           ),
                         ),
-                        const SizedBox(width: 20),
+
+                        // Next Track button
                         IconButton(
-                          icon: const Icon(Icons.forward_10_rounded, size: 28, color: AppColors.textSecondary),
+                          icon: const Icon(
+                            Icons.skip_next_rounded,
+                            size: 38,
+                            color: AppColors.textPrimary,
+                          ),
+                          tooltip: 'Next Track',
                           onPressed: () {
                             HapticFeedback.lightImpact();
-                            final pos = playerService.player.position;
-                            playerService.seek(pos + const Duration(seconds: 10));
+                            playerService.skipToNext();
+                          },
+                        ),
+
+                        // Repeat Mode button
+                        ValueListenableBuilder<AudioRepeatMode>(
+                          valueListenable: playerService.repeatModeNotifier,
+                          builder: (context, mode, _) {
+                            IconData icon;
+                            Color color = AppColors.textSecondary;
+                            if (mode == AudioRepeatMode.one) {
+                              icon = Icons.repeat_one_rounded;
+                              color = Colors.greenAccent;
+                            } else if (mode == AudioRepeatMode.all) {
+                              icon = Icons.repeat_on_rounded;
+                              color = Colors.greenAccent;
+                            } else {
+                              icon = Icons.repeat_rounded;
+                              color = AppColors.textSecondary;
+                            }
+                            return IconButton(
+                              icon: Icon(icon, size: 22, color: color),
+                              tooltip: 'Repeat: ${mode.name.toUpperCase()}',
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                playerService.cycleRepeatMode();
+                              },
+                            );
                           },
                         ),
                       ],
