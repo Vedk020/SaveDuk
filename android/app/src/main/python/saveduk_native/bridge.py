@@ -24,6 +24,7 @@ from yt_dlp.utils import DownloadError
 ALLOWED_HOSTS = (
     "youtube.com",
     "youtu.be",
+    "music.youtube.com",
     "instagram.com",
     "instagr.am",
     "twitter.com",
@@ -35,6 +36,11 @@ ALLOWED_HOSTS = (
     "fb.me",
     "m.facebook.com",
     "m.instagram.com",
+    "tiktok.com",
+    "vm.tiktok.com",
+    "soundcloud.com",
+    "spotify.com",
+    "open.spotify.com",
     "pinterest.com",
     "pinterest.ca",
     "pinterest.co.uk",
@@ -92,6 +98,10 @@ def _normalize_cookie_file(cookie_path: str) -> str:
         normalized_path = cookie_path + ".netscape"
         with open(normalized_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
+        try:
+            os.chmod(normalized_path, 0o600)
+        except OSError:
+            pass
         return normalized_path
     except Exception as e:
         _debug(0, "cookie_normalize_error", detail=str(e))
@@ -191,13 +201,36 @@ def _to_response(info: dict) -> dict:
     return _response(info, info, None)
 
 
+def _extract_music_meta(info: dict) -> tuple[str, str, str]:
+    track = str(info.get("track") or "").strip()
+    artist = str(info.get("artist") or "").strip()
+    album = str(info.get("album") or "").strip()
+
+    description = str(info.get("description") or "")
+    if (not track or not artist) and description:
+        # Check YouTube / Auto-generated music description patterns
+        m = re.search(r"(?:Song|Track)\s*[:\-]?\s*([^\n\r]+)[\s\S]*?(?:Artist)\s*[:\-]?\s*([^\n\r]+)", description, re.IGNORECASE)
+        if m:
+            if not track:
+                track = m.group(1).strip()
+            if not artist:
+                artist = m.group(2).strip()
+        else:
+            m2 = re.search(r"(?:Music in this video|Provided to YouTube by|Song)\s*[:\-]?\s*[\n\r]+([^\n\r]+)", description, re.IGNORECASE)
+            if m2 and not track:
+                track = m2.group(1).strip()
+
+    if not artist:
+        artist = str(info.get("creator") or info.get("uploader") or info.get("channel") or "").strip()
+
+    return track, artist, album
+
+
 def _response(info: dict, video: dict, audio: dict | None) -> dict:
     if not video.get("url"):
         raise ValueError("No downloadable media stream was found.")
     title = str(info.get("title") or "saveduk-video")
-    artist = str(info.get("artist") or info.get("creator") or info.get("uploader") or info.get("channel") or "")
-    track = str(info.get("track") or "")
-    album = str(info.get("album") or "")
+    track, artist, album = _extract_music_meta(info)
     thumbnail = str(info.get("thumbnail") or (info.get("thumbnails") and info["thumbnails"][-1].get("url")) or "")
     duration = int(info.get("duration") or 0)
     return {
@@ -214,9 +247,54 @@ def _response(info: dict, video: dict, audio: dict | None) -> dict:
 
 
 def search_tracks(query: str, limit: int = 10, request_id: int = 0) -> str:
-    """Search YouTube for music tracks and return structured search results."""
+    """Search YouTube for music tracks or extract a YouTube playlist directly."""
     try:
-        _debug(request_id, "search_started", query=query)
+        raw_query = query.strip()
+        # Direct YouTube Playlist URL extraction (strictly validated against ALLOWED_HOSTS)
+        if raw_query.startswith("https://") and ("list=" in raw_query or "/playlist" in raw_query):
+            _validate_url(raw_query)
+            _debug(request_id, "playlist_started", url=raw_query)
+            options = {
+                "format": "bestaudio/best",
+                "quiet": True,
+                "no_warnings": True,
+                "skip_download": True,
+                "socket_timeout": 20,
+                "extract_flat": True,
+            }
+            with yt_dlp.YoutubeDL(options) as ydl:
+                results = ydl.extract_info(raw_query, download=False)
+            entries = results.get("entries") or []
+            tracks = []
+            for e in entries:
+                if not e:
+                    continue
+                t_id = str(e.get("id") or "")
+                t_title = str(e.get("title") or "Unknown Title")
+                t_artist = str(e.get("uploader") or e.get("channel") or results.get("title") or "YouTube Music")
+                t_thumb = str(e.get("thumbnail") or (e.get("thumbnails") and e["thumbnails"][-1].get("url")) or "")
+                t_dur = int(e.get("duration") or 0)
+                tracks.append({
+                    "id": t_id,
+                    "title": t_title,
+                    "artist": t_artist,
+                    "album": results.get("title") or "YouTube Playlist",
+                    "thumbnail": t_thumb,
+                    "duration": t_dur,
+                    "url": f"https://www.youtube.com/watch?v={t_id}" if t_id else "",
+                })
+            _debug(request_id, "playlist_success", count=len(tracks))
+            return json.dumps({"tracks": tracks, "title": results.get("title") or "YouTube Playlist"}, ensure_ascii=False)
+
+        # Clean query: strip hashtags, URLs, and punctuation noise
+        clean_q = re.sub(r"https?://\S+", "", query)
+        clean_q = re.sub(r"#\w+", "", clean_q)
+        clean_q = re.sub(r"[^\w\s\-']", " ", clean_q)
+        clean_q = re.sub(r"\s+", " ", clean_q).strip()
+        if not clean_q:
+            clean_q = raw_query
+
+        _debug(request_id, "search_started", query=clean_q)
         options = {
             "format": "bestaudio/best",
             "noplaylist": True,
@@ -227,7 +305,7 @@ def search_tracks(query: str, limit: int = 10, request_id: int = 0) -> str:
             "extract_flat": "in_playlist",
         }
         with yt_dlp.YoutubeDL(options) as ydl:
-            results = ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
+            results = ydl.extract_info(f"ytsearch{limit}:{clean_q}", download=False)
         entries = results.get("entries") or []
         tracks = []
         for e in entries:

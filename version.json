@@ -1,0 +1,10 @@
+{
+  "latest_version": "1.0.0",
+  "latest_build": 1,
+  "min_required_version": "1.0.0",
+  "min_required_build": 1,
+  "force_update": false,
+  "title": "SaveDuk Beta Release",
+  "release_notes": "• Initial public beta release\n• High-performance on-device video downloader\n• SaveDuk Music with ACRCloud acoustic fingerprinting\n• Playlist import and offline library",
+  "download_url": "https://github.com/Vedk020/SaveDuk/releases/latest"
+}

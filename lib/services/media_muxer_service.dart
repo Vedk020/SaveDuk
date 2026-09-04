@@ -24,12 +24,12 @@ class MediaMuxerService {
     final outputPath = p.join(downloads.path, '${downloadId}_$safeFilename');
     await _deleteIfPresent(File(outputPath));
 
-    final command = [
+    final arguments = [
       '-y',
       '-i',
-      _quote(videoPath),
+      videoPath,
       '-i',
-      _quote(audioPath),
+      audioPath,
       '-map',
       '0:v:0',
       '-map',
@@ -38,9 +38,9 @@ class MediaMuxerService {
       'copy',
       '-movflags',
       '+faststart',
-      _quote(outputPath),
-    ].join(' ');
-    final session = await FFmpegKit.execute(command);
+      outputPath,
+    ];
+    final session = await FFmpegKit.executeWithArguments(arguments);
     final returnCode = await session.getReturnCode();
     final output = File(outputPath);
     if (!ReturnCode.isSuccess(returnCode) ||
@@ -62,8 +62,6 @@ class MediaMuxerService {
     if (base.isEmpty) return 'saveduk-video.mp4';
     return base.endsWith('.mp4') ? base : '$base.mp4';
   }
-
-  String _quote(String value) => "'${value.replaceAll("'", r"'\\''")}'";
 
   Future<void> _deleteIfPresent(File file) async {
     try {

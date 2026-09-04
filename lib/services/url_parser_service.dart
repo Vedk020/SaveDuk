@@ -12,6 +12,16 @@ class UrlParserService {
     return match?.group(0);
   }
 
+  /// Extract all URLs from multi-line or batch paste text
+  static List<String> extractAllUrls(String text) {
+    final urlRegex = RegExp(
+      r'https?://[^\s<>"{}|\\^`\[\]]+',
+      caseSensitive: false,
+    );
+    final matches = urlRegex.allMatches(text);
+    return matches.map((m) => m.group(0)!).toSet().toList();
+  }
+
   /// Detect which platform a URL belongs to
   static SupportedPlatform? detectPlatform(String url) {
     for (final platform in AppPlatforms.all) {

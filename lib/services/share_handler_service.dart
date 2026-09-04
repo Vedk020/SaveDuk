@@ -35,6 +35,8 @@ class ShareHandlerService {
   final StreamController<SharedPayload> _controller =
       StreamController<SharedPayload>.broadcast();
   SharedPayload? _pending;
+  String? _lastPushedUrl;
+  DateTime? _lastPushedTime;
 
   /// Stream of incoming shared payloads.
   Stream<SharedPayload> get sharedPayloadStream => _controller.stream;
@@ -43,9 +45,21 @@ class ShareHandlerService {
   Stream<String> get sharedUrlStream =>
       _controller.stream.map((p) => p.url);
 
-  /// Push a new shared payload.
+  /// Push a new shared payload with automatic intent deduplication.
   void pushPayload(SharedPayload payload) {
-    if (payload.url.trim().isEmpty) return;
+    final trimmedUrl = payload.url.trim();
+    if (trimmedUrl.isEmpty) return;
+
+    final now = DateTime.now();
+    if (_lastPushedUrl == trimmedUrl &&
+        _lastPushedTime != null &&
+        now.difference(_lastPushedTime!).inMilliseconds < 1500) {
+      // Ignore duplicate intent emitted within 1.5 seconds
+      return;
+    }
+    _lastPushedUrl = trimmedUrl;
+    _lastPushedTime = now;
+
     _pending = payload;
     _controller.add(payload);
   }

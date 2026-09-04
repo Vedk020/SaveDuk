@@ -78,10 +78,17 @@ class MainActivity : FlutterActivity() {
                 try {
                     val cookieFile = java.io.File(applicationContext.filesDir, "saveduk_cookies.txt")
                     cookieFile.writeText(cookies)
-                    Log.i(extractorLogTag, "cookies updated (${cookies.length} bytes)")
+                    cookieFile.setReadable(true, true)
+                    cookieFile.setWritable(true, true)
+                    // Invalidate any existing netscape converted file so it regenerates cleanly
+                    val netscapeFile = java.io.File(applicationContext.filesDir, "saveduk_cookies.txt.netscape")
+                    if (netscapeFile.exists()) {
+                        netscapeFile.delete()
+                    }
+                    Log.i(extractorLogTag, "cookies updated securely")
                     result.success(cookieFile.absolutePath)
                 } catch (e: Exception) {
-                    Log.e(extractorLogTag, "cookie write failed: ${e.message}")
+                    Log.e(extractorLogTag, "cookie write failed")
                     result.error("cookie_error", "Failed to save cookies", null)
                 }
                 return@setMethodCallHandler
@@ -94,7 +101,9 @@ class MainActivity : FlutterActivity() {
             if (call.method == "clearCookies") {
                 val cookieFile = java.io.File(applicationContext.filesDir, "saveduk_cookies.txt")
                 if (cookieFile.exists()) cookieFile.delete()
-                Log.i(extractorLogTag, "cookies cleared")
+                val netscapeFile = java.io.File(applicationContext.filesDir, "saveduk_cookies.txt.netscape")
+                if (netscapeFile.exists()) netscapeFile.delete()
+                Log.i(extractorLogTag, "all session cookies cleared")
                 result.success(null)
                 return@setMethodCallHandler
             }
@@ -178,6 +187,51 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        val mediaChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "saveduk/media_notification")
+        MediaNotificationService.onActionCallback = { action ->
+            runOnUiThread {
+                mediaChannel.invokeMethod("onAction", action)
+            }
+        }
+        mediaChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "show" -> {
+                    val title = call.argument<String>("title") ?: "SaveDuk Music"
+                    val artist = call.argument<String>("artist") ?: "Playing"
+                    val isPlaying = call.argument<Boolean>("isPlaying") ?: true
+                    val intent = Intent(this, MediaNotificationService::class.java).apply {
+                        action = MediaNotificationService.ACTION_START
+                        putExtra("title", title)
+                        putExtra("artist", artist)
+                        putExtra("isPlaying", isPlaying)
+                    }
+                    startForegroundService(intent)
+                    result.success(null)
+                }
+                "update" -> {
+                    val title = call.argument<String>("title") ?: "SaveDuk Music"
+                    val artist = call.argument<String>("artist") ?: "Playing"
+                    val isPlaying = call.argument<Boolean>("isPlaying") ?: true
+                    val intent = Intent(this, MediaNotificationService::class.java).apply {
+                        action = MediaNotificationService.ACTION_UPDATE
+                        putExtra("title", title)
+                        putExtra("artist", artist)
+                        putExtra("isPlaying", isPlaying)
+                    }
+                    startService(intent)
+                    result.success(null)
+                }
+                "hide" -> {
+                    val intent = Intent(this, MediaNotificationService::class.java).apply {
+                        action = MediaNotificationService.ACTION_STOP
+                    }
+                    startService(intent)
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -186,7 +240,6 @@ class MainActivity : FlutterActivity() {
         extractSharedPayload(intent)?.let { payload ->
             pendingSharePayload = payload
             shareChannel?.invokeMethod("sharedPayload", payload)
-            shareChannel?.invokeMethod("sharedText", payload["url"])
         }
     }
 
@@ -194,7 +247,9 @@ class MainActivity : FlutterActivity() {
         if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("text/") != true) {
             return null
         }
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() } ?: return null
+        val rawText = intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() } ?: return null
+        // Limit shared text size to 4096 characters to prevent memory exhaustion / DoS attacks
+        val text = rawText.take(4096).trim()
         val explicitMode = intent.getStringExtra("saveduk_mode")
         val className = intent.component?.className ?: ""
         val mode = if (explicitMode == "music" || className.contains("MusicShareActivity") || className.contains("ShareMusicActivity")) {

@@ -18,6 +18,7 @@ import '../services/settings_service.dart';
 import '../widgets/music_recognition_sheet.dart';
 import 'about_screen.dart';
 import 'settings_screen.dart';
+import '../services/update_service.dart';
 import 'dart:async';
 
 /// Home screen — main interface with URL paste + download list
@@ -33,6 +34,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final OnDeviceExtractorService _extractorService = OnDeviceExtractorService();
   final DownloadService _downloadService = DownloadService();
   final MediaMuxerService _mediaMuxer = MediaMuxerService();
+  final Set<String> _inFlightUrls = {};
   List<DownloadItem> _downloads = [];
   bool _isLoading = true;
 
@@ -56,6 +58,20 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _handleIncomingPayload(pending);
       });
     }
+
+    // Check for app updates in the background
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAppUpdateSilently();
+    });
+  }
+
+  Future<void> _checkAppUpdateSilently() async {
+    try {
+      final updateResult = await UpdateService.instance.checkForUpdates();
+      if (mounted && updateResult.hasUpdate) {
+        UpdateService.instance.showUpdateDialog(context, updateResult);
+      }
+    } catch (_) {}
   }
 
   Future<void> _handleIncomingPayload(SharedPayload payload) async {
@@ -106,6 +122,12 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       return;
     }
 
+    if (_inFlightUrls.contains(cleanUrl)) {
+      _showSnackbar('Download already in progress');
+      return;
+    }
+    _inFlightUrls.add(cleanUrl);
+
     // Create download item
     final item = DownloadItem(
       id: const Uuid().v4(),
@@ -126,6 +148,159 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     // Start download pipeline
     _startDownload(item);
+  }
+
+  Future<void> _processBatchUrls(List<String> rawUrls) async {
+    final validItems = <DownloadItem>[];
+
+    for (final raw in rawUrls) {
+      final extracted = UrlParserService.extractUrl(raw);
+      if (extracted == null) continue;
+      final clean = UrlParserService.cleanUrl(extracted);
+      final platform = UrlParserService.detectPlatform(clean);
+      if (platform == null) continue;
+
+      final item = DownloadItem(
+        id: const Uuid().v4(),
+        originalUrl: clean,
+        platform: platform.id,
+        createdAt: DateTime.now(),
+        status: DownloadStatus.fetching,
+      );
+      validItems.add(item);
+    }
+
+    if (validItems.isEmpty) {
+      _showSnackbar('No supported URLs found in batch', isError: true);
+      return;
+    }
+
+    setState(() {
+      _downloads.insertAll(0, validItems);
+    });
+
+    for (final item in validItems) {
+      await DatabaseService.insert(item);
+    }
+
+    _urlController.clear();
+    _showSnackbar('Queued ${validItems.length} videos for download ✓');
+
+    // Download sequentially with progress notification
+    for (final item in validItems) {
+      if (!mounted) break;
+      await _startDownload(item);
+    }
+  }
+
+  void _showBatchDownloadModal() {
+    final batchController = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (modalCtx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final detected = UrlParserService.extractAllUrls(batchController.text);
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.dynamic_feed_rounded, size: 20, color: Colors.greenAccent),
+                      const SizedBox(width: 8),
+                      Text(
+                        'BATCH DOWNLOADER',
+                        style: Theme.of(modalCtx).textTheme.titleLarge?.copyWith(fontSize: 15),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        onPressed: () => Navigator.pop(modalCtx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Paste multiple video links from YouTube, Instagram, Facebook, or X (one per line). All videos will be queued and downloaded to your gallery.',
+                    style: Theme.of(modalCtx).textTheme.bodySmall?.copyWith(height: 1.4),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: batchController,
+                    maxLines: 5,
+                    style: const TextStyle(fontSize: 12),
+                    onChanged: (_) => setModalState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'https://youtube.com/watch?v=...\nhttps://instagram.com/reel/...\nhttps://x.com/...',
+                      hintStyle: Theme.of(modalCtx).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.content_paste_rounded, size: 18),
+                        tooltip: 'Paste from clipboard',
+                        onPressed: () async {
+                          final data = await Clipboard.getData(Clipboard.kTextPlain);
+                          if (data?.text != null) {
+                            batchController.text = data!.text!;
+                            setModalState(() {});
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Text(
+                        '${detected.length} links detected',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: detected.isNotEmpty ? Colors.greenAccent : AppColors.textMuted,
+                        ),
+                      ),
+                      const Spacer(),
+                      ElevatedButton.icon(
+                        onPressed: detected.isEmpty
+                            ? null
+                            : () {
+                                HapticFeedback.mediumImpact();
+                                Navigator.pop(modalCtx);
+                                _processBatchUrls(detected);
+                              },
+                        icon: const Icon(Icons.download_rounded, size: 16, color: Colors.black),
+                        label: Text(
+                          detected.isEmpty ? 'START BATCH' : 'START BATCH (${detected.length})',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.greenAccent,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _startDownload(DownloadItem item) async {
@@ -174,6 +349,11 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         title: result.title,
       );
 
+      int lastUiMs = 0;
+      int lastNotifMs = 0;
+      double lastProgress = 0.0;
+      int? lastSize;
+
       final videoPath = await _downloadService.downloadFile(
         url: result.video.url,
         downloadId: '${item.id}-video',
@@ -189,15 +369,26 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             status: DownloadStatus.downloading,
             progress: scaledProgress,
           );
-          _updateItem(current);
-          BackgroundDownloadService.updateProgress(
-            title: result.title,
-            progress: (scaledProgress * 100).toInt(),
-          );
+          final now = DateTime.now().millisecondsSinceEpoch;
+          if (now - lastUiMs > 120 || (scaledProgress - lastProgress).abs() >= 0.02) {
+            lastUiMs = now;
+            lastProgress = scaledProgress;
+            _updateItem(current, persist: false);
+          }
+          if (now - lastNotifMs > 500) {
+            lastNotifMs = now;
+            BackgroundDownloadService.updateProgress(
+              title: result.title,
+              progress: (scaledProgress * 100).toInt(),
+            );
+          }
         },
         onFileSize: (bytes) {
-          current = current.copyWith(fileSize: bytes);
-          _updateItem(current);
+          if (lastSize != bytes) {
+            lastSize = bytes;
+            current = current.copyWith(fileSize: bytes);
+            _updateItem(current, persist: false);
+          }
         },
       );
 
@@ -210,11 +401,17 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           filename: _streamFilename(result.filename, audio.extension, 'audio'),
           headers: audio.headers,
           onProgress: (progress) {
+            final scaledProgress = 0.8 + (progress * 0.15);
             current = current.copyWith(
               status: DownloadStatus.downloading,
-              progress: 0.8 + (progress * 0.15),
+              progress: scaledProgress,
             );
-            _updateItem(current);
+            final now = DateTime.now().millisecondsSinceEpoch;
+            if (now - lastUiMs > 120 || (scaledProgress - lastProgress).abs() >= 0.02) {
+              lastUiMs = now;
+              lastProgress = scaledProgress;
+              _updateItem(current, persist: false);
+            }
           },
           onFileSize: (_) {},
         );
@@ -256,17 +453,21 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       );
       await BackgroundDownloadService.notifyDownloadFinished();
       _showSnackbar('Download failed', isError: true);
+    } finally {
+      _inFlightUrls.remove(item.originalUrl);
     }
   }
 
-  void _updateItem(DownloadItem updated) {
+  void _updateItem(DownloadItem updated, {bool persist = true}) {
     setState(() {
       final index = _downloads.indexWhere((d) => d.id == updated.id);
       if (index >= 0) {
         _downloads[index] = updated;
       }
     });
-    DatabaseService.update(updated);
+    if (persist) {
+      DatabaseService.update(updated);
+    }
   }
 
   void _retryDownload(DownloadItem item) {
@@ -290,14 +491,21 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _deleteDownload(DownloadItem item) async {
-    if (item.localPath != null) {
-      await GalleryService.deleteLocalFile(item.localPath!);
-    }
-    await DatabaseService.delete(item.id);
+    HapticFeedback.mediumImpact();
+    // Synchronously remove from local state to prevent Dismissible tree de-sync
     setState(() {
       _downloads.removeWhere((d) => d.id == item.id);
     });
     _showSnackbar('Removed');
+
+    try {
+      if (item.localPath != null) {
+        await GalleryService.deleteLocalFile(item.localPath!);
+      }
+      await DatabaseService.delete(item.id);
+    } catch (e) {
+      debugPrint('[HomeScreen] delete file error: $e');
+    }
   }
 
   Future<void> _pasteFromClipboard() async {
@@ -574,24 +782,46 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   children: [
                     Row(
                       children: [
-                        // Dynamic Logo (alternates based on user setting)
+                        // Dynamic Logo with instant reactivity, smooth animation, and quick-toggle tap
                         ValueListenableBuilder<String>(
                           valueListenable: SettingsService.instance.activeLogoNotifier,
                           builder: (context, activeLogo, _) {
-                            return Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppColors.line, width: 1),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(7),
-                                child: Image.asset(
-                                  activeLogo,
-                                  width: 38,
-                                  height: 38,
-                                  fit: BoxFit.cover,
+                            return GestureDetector(
+                              onTap: () {
+                                HapticFeedback.mediumImpact();
+                                final nextLogo = activeLogo == 'assets/images/logo.png'
+                                    ? 'assets/images/logo_music.png'
+                                    : 'assets/images/logo.png';
+                                SettingsService.instance.setActiveLogo(nextLogo);
+                              },
+                              onLongPress: () {
+                                HapticFeedback.heavyImpact();
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                                );
+                              },
+                              child: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppColors.line, width: 1),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(7),
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 250),
+                                    transitionBuilder: (child, animation) =>
+                                        FadeTransition(opacity: animation, child: ScaleTransition(scale: animation, child: child)),
+                                    child: Image.asset(
+                                      activeLogo,
+                                      key: ValueKey<String>(activeLogo),
+                                      width: 38,
+                                      height: 38,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
                                 ),
                               ),
                             );
@@ -709,7 +939,7 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             },
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         // Paste button
                         _MonoButton(
                           icon: Icons.content_paste_rounded,
@@ -718,12 +948,26 @@ class HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           primary: false,
                         ),
                         const SizedBox(width: 8),
+                        // Batch button
+                        _MonoButton(
+                          icon: Icons.dynamic_feed_rounded,
+                          onTap: _showBatchDownloadModal,
+                          tooltip: 'Batch Download',
+                          primary: false,
+                        ),
+                        const SizedBox(width: 8),
                         // Download button
                         _MonoButton(
                           icon: Icons.arrow_downward_rounded,
                           onTap: () {
                             final text = _urlController.text.trim();
-                            if (text.isNotEmpty) _processUrl(text);
+                            if (text.isEmpty) return;
+                            final detected = UrlParserService.extractAllUrls(text);
+                            if (detected.length > 1) {
+                              _processBatchUrls(detected);
+                            } else {
+                              _processUrl(text);
+                            }
                           },
                           tooltip: 'Download',
                         ),

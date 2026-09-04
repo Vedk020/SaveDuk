@@ -15,7 +15,10 @@ class AboutScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: AppColors.textPrimary,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
@@ -73,14 +76,17 @@ class AboutScreen extends StatelessWidget {
               Text(
                 'SAVE//DUK',
                 style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                      fontSize: 32,
-                      letterSpacing: -1.5,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  fontSize: 32,
+                  letterSpacing: -1.5,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceLight,
                   borderRadius: BorderRadius.circular(6),
@@ -112,11 +118,16 @@ class AboutScreen extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.info_outline_rounded, size: 16, color: AppColors.textMuted),
+                        const Icon(
+                          Icons.info_outline_rounded,
+                          size: 16,
+                          color: AppColors.textMuted,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           'ABOUT THIS APP',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 1.0,
                                 color: AppColors.textMuted,
@@ -126,13 +137,14 @@ class AboutScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'save duck basically ye ek app hai jo social media videos aur music download and stream karne ke liye banaya gaya hai — 100% on-device, free, no ads, privacy-focused.',
+                      'save duck ye basically ek app hai.......'
+                      'bade genuius ne banaya hai ye app vaise == veduBHAI',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontSize: 15,
-                            height: 1.5,
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        fontSize: 15,
+                        height: 1.5,
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
@@ -154,10 +166,10 @@ class AboutScreen extends StatelessWidget {
                     Text(
                       'CORE CAPABILITIES',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.0,
-                            color: AppColors.textMuted,
-                          ),
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.0,
+                        color: AppColors.textMuted,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     _buildFeatureRow(
@@ -200,7 +212,9 @@ class AboutScreen extends StatelessWidget {
                     backgroundColor: AppColors.textPrimary,
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   child: const Text(
                     'Back to App',
@@ -236,7 +250,11 @@ class AboutScreen extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: const TextStyle(fontSize: 11, color: AppColors.textMuted, height: 1.3),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textMuted,
+                  height: 1.3,
+                ),
               ),
             ],
           ),

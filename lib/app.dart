@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'config/constants.dart';
 import 'screens/home_screen.dart';
 import 'screens/music_screen.dart';
@@ -45,8 +46,8 @@ class AppShellState extends State<AppShell> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Persistent Mini Audio Player across all screens
-          const MiniPlayer(),
+          // Persistent Mini Audio Player across all screens with paint boundary
+          RepaintBoundary(child: const MiniPlayer()),
 
           Container(
             decoration: BoxDecoration(
@@ -58,7 +59,10 @@ class AppShellState extends State<AppShell> {
             child: BottomNavigationBar(
               currentIndex: _currentIndex,
               onTap: (index) {
-                setState(() => _currentIndex = index);
+                if (index != _currentIndex) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _currentIndex = index);
+                }
               },
               items: const [
                 BottomNavigationBarItem(

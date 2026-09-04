@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import '../config/constants.dart';
 import '../services/on_device_extractor_service.dart';
 import '../services/settings_service.dart';
+import '../services/update_service.dart';
 import 'about_screen.dart';
 
 /// Settings screen for configuring app logo, cookies, default streaming, and storage
@@ -21,6 +22,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _hasCookies = false;
   String _cacheSizeText = 'Calculating…';
+  bool _isCheckingUpdate = false;
+
+  Future<void> _manualCheckUpdate() async {
+    setState(() => _isCheckingUpdate = true);
+    HapticFeedback.lightImpact();
+    try {
+      final res = await UpdateService.instance.checkForUpdates();
+      if (!mounted) return;
+      setState(() => _isCheckingUpdate = false);
+      if (res.hasUpdate) {
+        UpdateService.instance.showUpdateDialog(context, res);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You are on the latest version of SaveDuk (v${UpdateService.currentVersion}) ✓'),
+            backgroundColor: AppColors.surfaceLight,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isCheckingUpdate = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Check failed: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -401,15 +430,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: AppColors.line),
               ),
-              child: ListTile(
-                leading: const Icon(Icons.info_outline_rounded, color: AppColors.textPrimary),
-                title: const Text('About SaveDuk', style: TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: const Text('On-device engine, architecture, developer info', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()));
-                },
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.info_outline_rounded, color: AppColors.textPrimary),
+                    title: const Text('About SaveDuk', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: const Text('On-device engine, architecture, developer info', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()));
+                    },
+                  ),
+                  const Divider(height: 1, color: AppColors.line),
+                  ListTile(
+                    leading: const Icon(Icons.system_update_rounded, color: Colors.greenAccent),
+                    title: const Text('Check for Updates', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: const Text(
+                      'SaveDuk Beta v${UpdateService.currentVersion} (Build ${UpdateService.currentBuildNumber})',
+                      style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    ),
+                    trailing: _isCheckingUpdate
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.textPrimary),
+                          )
+                        : Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceLight,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AppColors.line),
+                            ),
+                            child: const Text(
+                              'CHECK',
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                            ),
+                          ),
+                    onTap: _isCheckingUpdate ? null : _manualCheckUpdate,
+                  ),
+                ],
               ),
             ),
           ],

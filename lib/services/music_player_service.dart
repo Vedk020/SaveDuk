@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/music_track.dart';
+import 'jam_sync_service.dart';
 import 'on_device_extractor_service.dart';
 
 /// Global audio player service for streaming and local track playback
@@ -10,6 +12,8 @@ class MusicPlayerService {
     _init();
   }
   static final MusicPlayerService instance = MusicPlayerService._();
+
+  static const MethodChannel _mediaChannel = MethodChannel('saveduk/media_notification');
 
   final AudioPlayer _player = AudioPlayer();
   final OnDeviceExtractorService _extractor = OnDeviceExtractorService();
@@ -25,11 +29,48 @@ class MusicPlayerService {
   bool get isPlaying => _player.playing;
 
   void _init() {
+    _mediaChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onAction') {
+        final action = call.arguments as String?;
+        if (action == 'play_pause') {
+          togglePlayPause();
+        } else if (action == 'rewind') {
+          seek(_player.position - const Duration(seconds: 10));
+        } else if (action == 'forward') {
+          seek(_player.position + const Duration(seconds: 10));
+        } else if (action == 'stop') {
+          stop();
+        }
+      }
+    });
+
     _player.playerStateStream.listen((state) {
       isBufferingNotifier.value =
           state.processingState == ProcessingState.buffering ||
           state.processingState == ProcessingState.loading;
+
+      if (currentTrack != null) {
+        _syncMediaNotification(currentTrack!, state.playing);
+      }
     });
+  }
+
+  void _syncMediaNotification(MusicTrack track, bool isPlaying) {
+    if (!Platform.isAndroid) return;
+    try {
+      _mediaChannel.invokeMethod('show', {
+        'title': track.title,
+        'artist': track.artist,
+        'isPlaying': isPlaying,
+      });
+    } catch (_) {}
+  }
+
+  void _hideMediaNotification() {
+    if (!Platform.isAndroid) return;
+    try {
+      _mediaChannel.invokeMethod('hide');
+    } catch (_) {}
   }
 
   /// Play a music track (streams online if not local)
@@ -51,7 +92,22 @@ class MusicPlayerService {
 
       // Case 3: Need to resolve audio stream URL
       if (streamUrl == null || streamUrl.isEmpty) {
-        final targetUrl = track.originalMediaUrl ?? 'https://www.youtube.com/watch?v=${track.id}';
+        String targetUrl;
+        if (track.originalMediaUrl != null && track.originalMediaUrl!.isNotEmpty) {
+          targetUrl = track.originalMediaUrl!;
+        } else {
+          // No URL stored (e.g. legacy imported track) — search by title + artist
+          debugPrint('[MusicPlayerService] No URL for "${track.title}", searching YouTube…');
+          final searchResults = await _extractor.searchTracks(
+            '"${track.title}" ${track.artist}',
+            limit: 1,
+          );
+          if (searchResults.isNotEmpty) {
+            targetUrl = searchResults.first.url;
+          } else {
+            throw Exception('Could not find a playable source for "${track.title}"');
+          }
+        }
         final media = await _extractor.extract(targetUrl);
         if (!media.isSuccess) {
           throw Exception(media.error ?? 'Failed to resolve audio stream');
@@ -68,6 +124,7 @@ class MusicPlayerService {
         ),
       );
       await _player.play();
+      JamSyncService.instance.notifyTrackChanged(track);
     } catch (e) {
       debugPrint('[MusicPlayerService] playTrack error: $e');
       isBufferingNotifier.value = false;
@@ -96,11 +153,13 @@ class MusicPlayerService {
   }
 
   Future<void> stop() async {
+    _hideMediaNotification();
     await _player.stop();
     currentTrackNotifier.value = null;
   }
 
   void dispose() {
+    _hideMediaNotification();
     _player.dispose();
   }
 }

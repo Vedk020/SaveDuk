@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:open_file/open_file.dart';
 import 'package:share_plus/share_plus.dart';
@@ -79,11 +80,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _deleteDownload(DownloadItem item) async {
-    if (item.localPath != null) {
-      await GalleryService.deleteLocalFile(item.localPath!);
-    }
-    await DatabaseService.delete(item.id);
-    _loadDownloads();
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _downloads.removeWhere((d) => d.id == item.id);
+    });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -91,6 +91,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
           backgroundColor: AppColors.surface,
         ),
       );
+    }
+
+    try {
+      if (item.localPath != null) {
+        await GalleryService.deleteLocalFile(item.localPath!);
+      }
+      await DatabaseService.delete(item.id);
+    } catch (e) {
+      debugPrint('[LibraryScreen] delete error: $e');
     }
   }
 

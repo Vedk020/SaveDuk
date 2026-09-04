@@ -87,3 +87,11 @@ class AppColors {
   static const Color error = Color(0xFFF5F5F5);
   static const Color warning = Color(0xFFD0D0D0);
 }
+
+/// ACRCloud Acoustic Recognition Configuration
+class AcrCloudConfig {
+  static const String host = 'identify-ap-southeast-1.acrcloud.com';
+  static const String accessKey = '3a6b9c411a1bbd17f4a3a114bda40e0e';
+  static const String accessSecret = 'vfzV7xUBP1NOLJuFDMDcWroClA4z0J8YhZgqU6Lb';
+}
+
